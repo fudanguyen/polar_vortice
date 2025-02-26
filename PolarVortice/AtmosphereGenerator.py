@@ -18,6 +18,13 @@ from scipy.ndimage.filters import gaussian_filter
 import pandas as pd
 from sklearn.decomposition import PCA
 from datetime import datetime
+import random
+
+from collections import defaultdict
+import copy
+
+### ========= lamda function to create nested_dict ======================
+nested_dict = lambda: defaultdict(nested_dict)
 
 ### IMPORTANT: create offscreen rendering to save computation
 mlab.options.offscreen = True
@@ -215,8 +222,8 @@ save = False
 draw_animation = True
 # draw_animation = False
 ######## save animation as gif ################### 
-save_animation = True
-# save_animation = False
+# save_animation = True
+save_animation = False
 ######## save the first still frame ##############
 save_still = True 
 # save_still = False 
@@ -260,14 +267,14 @@ Ppol = 60.0
 ## where the long-term modulation comes from band or pole.
 ## Three cases to solve this problem.
 
-#### Case A: Polar cap with circle vortices that do not change individually.
-modu_config = 'polarStatic'
+## Case A: Polar cap with circle vortices that do not change individually.
+# modu_config = 'polarStatic'
 
 # ##### Case B: Polar cap with circle vortices that change individually.
 # modu_config = 'polarDynamic'
 
 ##### Case C: Contains polar cap, but long-term change comes from bands.
-# modu_config = 'noPolar'
+modu_config = 'noPolar'
 
 # =============================================================================
 # TEST ONLY
@@ -288,7 +295,7 @@ speckey = {'A':0.25, 'B':0.58, 'P':0.75}
 # continuous or non-continous time-array.
 # =============================================================================
 option_time_array = 'simple'# simple: generate continuous evenly-spaced-time-array
-# option_time_array = 'multivisit'# simple: generate continuous evenly-spaced-time-array'
+ # option_time_array = 'multivisit'# simple: generate continuous evenly-spaced-time-array'
 ### Color mapping
 cmap = 'inferno'
 
@@ -322,13 +329,16 @@ t0, t1 = 0,60
 # frame_no = 2
 # t0, t1 = 29,30
 
+# frame_no = 5
+# t0, t1 = 0,5
+
 # =============================================================================
 #  Inclination Value of the models.
 # =============================================================================
 # inclination = [-90., -80, -70, -60, -50, -40, -30, -20, -10, 0., 10, 20, 30, 40, 50, 60, 70, 80, 90.]
 inclination = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0.]
-# inclination = [-60, -10]
-# inclination =[-30, 30]
+# inclination = [-80, -40, 0]
+# inclination =[-30, -50]
 # inclination = [0]
 # inclination = [-60]
 # inclination = [-10]
@@ -342,6 +352,119 @@ inclination = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0.]
 # inclination = [-45]
 # inclination = [-70]
 # inclination = [-90]
+
+
+# =============================================================================
+#  Latitudinal CONFIGURATION Values of the models.
+# =============================================================================
+Config = []
+
+# modelname = 'BD_B'
+# Config = [[45, 30, Fband, 'B', 10, Pband/2],
+#           [20, 5, Fband, 'B', 60, Pband], 
+#           [89, 65, Fband, 'P', -30, Ppol]]
+
+# modelname = 'BD_C'
+# Config = [[89, 70, Fband, 'P', -30, Ppol],
+#           [45, 35., Fband, 'B', 10, Pband/2],
+#           [22, 15, Fband, 'B', 150, Pband], 
+#           [-10, -20, Fband, 'B', -26, Pband/2],
+#           [-30, -40, Fband, 'B', 135, Pband],
+#           [-72, -89, Fband, 'P', 15, Ppol]]
+
+# modelname = 'BD_D'
+# Config = [[88, 77, Fband, 'P', -30, Ppol],
+#           [72, 65, Fband, 'P', -70, Ppol],
+#           [53, 46., Fband, 'B', 100, Pband/2],
+#           [35, 27., Fband, 'B', -10, Pband/2],
+#           [22, 15, Fband, 'B', 150, Pband],
+#           [8, 0, Fband, 'B', -50, Pband],
+#           [-10, -18, Fband, 'B', 56, Pband],
+#           [-25, -34, Fband, 'B', 16, Pband],
+#           [-40, -48, Fband, 'B', 85, Pband/2],
+#           [-54, -60, Fband, 'B', -35, Pband/2],
+#           [-68, -75, Fband, 'P', 5, Ppol],
+#           [-77, -88, Fband, 'P', 15, Ppol]]
+
+# modelname = 'BD_E'
+# Config = [[90, 65, Fpolar, 'P', -30, Ppol],
+#           [45, 38., Fband, 'B', 10, Pband/2],
+#           [25, 15, Fband, 'B', 150, Pband], 
+#           [-10, -20, Fband, 'B', -26, Pband],
+#           [-33, -40, Fband, 'B', 135, Pband/2],
+#           [-65, -90, Fpolar, 'P', 15, Ppol]]
+
+# modelname = 'production0'
+# Config = [[90, 65, Fpolar, 'P', -30, Ppol],
+#           [45, 38., Fband, 'B', 10, Pband/2],
+#           [25, 15, Fband, 'B', 150, Pband], 
+#           [-10, -20, Fband, 'B', -26, Pband],
+#           [-33, -40, Fband, 'B', 135, Pband/2],
+#           [-65, -90, Fpolar, 'P', 15, Ppol]]
+
+# modelname = 'production1'
+# Config = [[90, 65, Fpolar, 'P', 0, Ppol],
+#           [45, 38., Fband, 'B', 10, Pband/2],
+#           [25, 15, Fband, 'B', 150, Pband], 
+#           [-10, -20, Fband, 'B', -26, Pband],
+#           [-33, -40, Fband, 'B', 135, Pband/2],
+#           [-65, -90, Fpolar, 'P', 0, Ppol]]
+
+# modelname = 'production2' # ==== 4 bands but all closer to equator ===
+# Config = [[90, 65, Fpolar, 'P', 0, Ppol],
+#           [30, 24, Fband, 'B', 10, Pband/2],
+#           [15, 5, Fband, 'B', 150, Pband], 
+#           [-5, -15, Fband, 'B', -26, Pband],
+#           [-24, -30, Fband, 'B', 135, Pband/2],
+#           [-65, -90, Fpolar, 'P', 0, Ppol]]
+
+# modelname = 'production3' # ==== 4 bands spead evenly, width slightly larger at equator
+# Config = [[90, 65, Fpolar, 'P', 0, Ppol],
+#           [45, 38., Fband, 'B', 10, Pband/2],
+#           [22, 12, Fband, 'B', 150, Pband], 
+#          [-7, -17, Fband, 'B', -26, Pband],
+#          [-33, -40, Fband, 'B', 135, Pband/2],
+#          [-65, -90, Fpolar, 'P', 0, Ppol]]
+
+# modelname = 'production4' # ==== 6 bands spread evenly
+# Config = [[90, 65, Fpolar, 'P', 0, Ppol],
+#           [43, 38., Fband, 'B', 10, Pband/2],
+#           [27, 21, Fband, 'B', 150, Pband],
+#           [12, 5, Fband, 'B', 150, Pband], 
+#           [-5, -12, Fband, 'B', -26, Pband],
+#           [-21, -27, Fband, 'B', -26, Pband],
+#           [-38, -43, Fband, 'B', 135, Pband/2],
+#           [-65, -90, Fpolar, 'P', 0, Ppol]]
+
+## Save randphases for metadata
+randphaselist = []
+
+# modelname = 'production1_phaseRandomized1'
+# modelname = 'production1_phaseRandomized2'
+# modelname = 'production1_phaseRandomized3'
+# modelname = 'production1_phaseRandomized4'
+# modelname = 'production1_phaseRandomized5'
+# modelname = 'production1_phaseRandomized6'
+# modelname = 'production1_phaseRandomized7'
+# modelname = 'production1_phaseRandomized8'
+# modelname = 'production1_phaseRandomized9'
+modelname = 'production1_phaseRandomized10'
+
+
+Config = [[90, 65, Fpolar, 'P', 1, Ppol],
+          [45, 38., Fband, 'B', 1, Pband/2],
+          [25, 15, Fband, 'B', 1, Pband], 
+          [-10, -20, Fband, 'B', 1, Pband],
+          [-33, -40, Fband, 'B', 1, Pband/2],
+          [-65, -90, Fpolar, 'P', 1, Ppol]]
+
+# modelname = 'production2_phaseRandomized1'
+# Config = [[90, 65, Fpolar, 'P', 1, Ppol],
+#           [45, 38., 0.8*Fband, 'B', 1, Pband/2],
+#           [22, 12, Fband, 'B', 1, Pband], 
+#           [-8, -18, Fband, 'B', 1, Pband],
+#           [-33, -40, 0.8*Fband, 'B', 1, Pband/2],
+#           [-65, -90, Fpolar, 'P', 1, Ppol]]
 
 # =============================================================================
 # Read Pre-ran Models Instead of Running New Instances
@@ -362,64 +485,25 @@ for counter, inclin in enumerate(inclination):
 # =============================================================================
     else:   
         print('  #### Run:[i=%i], %i/%i ####'%(inclin, counter+1, len(inclination)))
-        ### model name
-        # modelname = 'BD_B'
-        # config = [[45, 30, Fband, 'B', 10, Pband/2],
-        #           [20, 5, Fband, 'B', 60, Pband], 
-        #           [89, 65, Fband, 'P', -30, Ppol]]
-        # 
-        # modelname = 'BD_C'
-        # config = [[89, 70, Fband, 'P', -30, Ppol],
-        #           [45, 35., Fband, 'B', 10, Pband/2],
-        #           [22, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband/2],
-        #           [-30, -40, Fband, 'B', 135, Pband],
-        #           [-72, -89, Fband, 'P', 15, Ppol]]
-        #
-        # modelname = 'BD_D'
-        # config = [[88, 77, Fband, 'P', -30, Ppol],
-        #           [72, 65, Fband, 'P', -70, Ppol],
-        #           [53, 46., Fband, 'B', 100, Pband/2],
-        #           [35, 27., Fband, 'B', -10, Pband/2],
-        #           [22, 15, Fband, 'B', 150, Pband],
-        #           [8, 0, Fband, 'B', -50, Pband],
-        #           [-10, -18, Fband, 'B', 56, Pband],
-        #           [-25, -34, Fband, 'B', 16, Pband],
-        #           [-40, -48, Fband, 'B', 85, Pband/2],
-        #           [-54, -60, Fband, 'B', -35, Pband/2],
-        #           [-68, -75, Fband, 'P', 5, Ppol],
-        #           [-77, -88, Fband, 'P', 15, Ppol]]
         
-        # modelname = 'BD_E'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [45, 38., Fband, 'B', 10, Pband/2],
-        #           [25, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband],
-        #           [-33, -40, Fband, 'B', 135, Pband/2],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
-        
-        # modelname = 'production0'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [45, 38., Fband, 'B', 10, Pband/2],
-        #           [25, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband],
-        #           [-33, -40, Fband, 'B', 135, Pband/2],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
-        
-        modelname = 'production1'
-        config = [[90, 65, Fpolar, 'P', 0, Ppol],
-                  [45, 38., Fband, 'B', 10, Pband/2],
-                  [25, 15, Fband, 'B', 150, Pband], 
-                  [-10, -20, Fband, 'B', -26, Pband],
-                  [-33, -40, Fband, 'B', 135, Pband/2],
-                  [-65, -90, Fpolar, 'P', 0, Ppol]]
-        
-        # modelname = 'BD_F'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [28, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband/2],
-        #           [-30, -40, Fband, 'B', 135, Pband],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
+        ### ============== Randomize the phase offsets value ==================
+        ### Phase randomization OFF: Explicit declaration of phase 
+        ### Phase randomization ON: Phases randomized for every inclination
+        if 'Rand' in modelname or 'rand' in modelname: phaseRandomizer = True
+        else: phaseRandomizer = False
+        # =====================================================================
+        # PERFORM THE PHASE RANDOMIZATION
+        # =====================================================================
+        if phaseRandomizer:
+            randPhase = [random.randrange(-180,180,1) for i in range(6)]
+            ConfigCopy = []
+            ConfigCopy = copy.deepcopy(Config)
+            for i in range(len(ConfigCopy)):
+                ConfigCopy[i][4] = randPhase[i]
+            print('Randomized Phase: ', [x[4] for x in ConfigCopy])
+        else:
+            ConfigCopy = copy.deepcopy(Config)
+        ### ===================================================================
         
         ### Build metadata list
         metadata = {}
@@ -428,13 +512,16 @@ for counter, inclin in enumerate(inclination):
         metadata['Fband'], metadata['Fambient'] = Fband, Fambient
         metadata['Pband'], metadata['Ppol'] = Pband, Ppol
         metadata['config_columns'] = ['lat2', 'lat1', 'amp', 'typ', 'phase', 'period']
-        metadata['config'] = config
+        metadata['config'] = ConfigCopy
+        if phaseRandomizer:
+            randphaselist.append([inclin, randPhase])
+            metadata['randPhase'] = randphaselist
         
         # =====================================================================
         # Create Rectangular Map + 3D Mesh
         # =====================================================================
         ### Edit the property of bands here!
-        def atmos_mesh(x, config, t=0, spec=False):
+        def atmos_mesh(x, config=[], t=0, spec=False):
             im = Fambient*np.ones(x.shape)
             sm = speckey['A']*np.ones(x.shape)
             # lat = theta0*180/pi-90    
@@ -497,7 +584,7 @@ for counter, inclin in enumerate(inclination):
         ### SPECTRA WINDOW
         # inclin = 0
         sfig = mlab.figure(1, bgcolor=(0, 0, 0), fgcolor=(0, 0, 0), size=(500, 500))
-        _, s = atmos_mesh(x, config, spec=True)
+        _, s = atmos_mesh(x, config=ConfigCopy, spec=True)
         mlab.view(azimuth=180.0, elevation=90.0-inclin, distance=2.0, roll=90)
         sphere_spec = mlab.mesh(x, y, z, scalars=s, colormap='plasma', vmin=0, vmax=1, figure=sfig)
         sphere_spec.actor.property.lighting = False
@@ -563,7 +650,7 @@ for counter, inclin in enumerate(inclination):
             mlab.view(azimuth=180.0, elevation=90.0-inclin, distance=2.0, roll=90)
         
             ### Do the meshplot 
-            s = atmos_mesh(x,config,t=ti)
+            s = atmos_mesh(x, config=ConfigCopy, t=ti)
             sphere = mlab.mesh(x, y, z, scalars=s, colormap=cmap, vmin=0, vmax=1)
         
             ### Set up cosmetics
