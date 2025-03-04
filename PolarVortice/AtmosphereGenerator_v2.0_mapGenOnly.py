@@ -9,9 +9,28 @@ Created on Wed Oct 18 12:46:15 2023
 import h5py
 import pickle
 # from mayavi import mlab
+# =============================================================================
+# Enable vtk-m GPU-backend 
+import vtk
+# Create a render window
+render_window = vtk.vtkRenderWindow()
+
+# Check the rendering backend
+print("Rendering Backend:", render_window.GetRenderingBackend())
+
+# # Check GPU support
+# print("GPU Acceleration Supported:", render_window.GetGPUSupported())
+
+# # Check GPU details (if supported)
+# if render_window.GetGPUSupported():
+#     print("GPU Vendor:", render_window.GetGPUVendor())
+#     print("GPU Renderer:", render_window.GetGPUName())
+#     print("GPU Version:", render_window.GetGLVersion())
+# =============================================================================
 import pyvista as pv
 from tqdm import tqdm
 import numpy as np
+import numba
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 # from PIL import Image, ImageDraw
@@ -25,9 +44,6 @@ from datetime import datetime
 import imageio
 import cupy as cp
 
-### IMPORTANT: create offscreen rendering to save computation
-mlab.options.offscreen = True
-
 ### Path management
 import os
 from os.path import join
@@ -37,7 +53,7 @@ for i in range(len(folderarray)):
    homedir = join(homedir, folderarray[i])
 plotPath = join(homedir, 'plot/')
 
-########## Construct Mayavi spherical mesh #######################
+########## Construct spherical mesh #######################
 ### Create a sphere
 r = 1
 pi = np.pi
@@ -184,6 +200,47 @@ def circle_vortice(recmap, coord, t=0, number=5, variable_vortice=False, rotatio
     
     return recmap
 
+def circle_vortice_vectorized(recmap, coord, t=0, number=5, variable_vortice=False, rotation_period=30):
+    radiusfrac = 0.3
+    a, b = 0.75, 0.25
+
+    phaseValue = np.zeros(9) if not variable_vortice else np.array([0, -2, 5, -4, 8, 2, 4, -6, -8])
+    
+    for array in coord:
+        lat1, lat2 = array[0], array[1]
+        center_coord_long = equidistant_values(0, 360, n=number)
+        center_coord_lat = (lat1 + lat2) / 2
+        centerlat = int(lat(center_coord_lat))
+        
+        amplitude = recmap[int(xsize / 2), ysize - 1]
+        variableflux = 0.2 * np.sin(2 * np.pi / rotation_period * t - phaseValue) if variable_vortice else np.full(number, 0.2)
+        
+        r_vortice = np.sqrt(radiusfrac * area_bounded_latitudes(lat1, lat2, radius=1)) * (xsize / np.pi)
+        ar, br = a * r_vortice, b * r_vortice
+        
+        # Vectorized coordinate adjustments
+        revised_center_coord_long_px = long(center_coord_long) + (xsize) * (-t % rotation_period / rotation_period)
+        revised_center_coord_long_px = np.where(
+            revised_center_coord_long_px > xsize - 1,
+            revised_center_coord_long_px - (xsize - 1),
+            revised_center_coord_long_px
+        )
+        revised_center_coord_long_px = np.where(
+            revised_center_coord_long_px < 0,
+            revised_center_coord_long_px + (xsize - 1),
+            revised_center_coord_long_px
+        )
+        
+        # Vectorized mask for vortices
+        xx, yy = np.meshgrid(np.arange(xsize), np.arange(ysize), indexing='ij')
+        for i, xi in enumerate(revised_center_coord_long_px):
+            xi_int = int(xi)
+            mask = ((xx - xi_int) ** 2 / ar ** 2 + (yy - centerlat) ** 2 / br ** 2 <= 1) & \
+                (lat(lat2) > yy) & (yy > lat(lat1))
+            recmap[mask] = amplitude + variableflux[i]
+    
+    return recmap
+
 #%% RUN THE ATMOSPHERE EVOLUTION 3D MODEL
 
 # =============================================================================
@@ -197,16 +254,12 @@ warnings.filterwarnings("ignore")
 ###############################
 
 #### SAVE options
-# TEST = True
-TEST = False
+TEST = True
+# TEST = False
 if TEST: 
     plotPath = join(homedir, 'plot/', 'test/')
 else:
     plotPath = join(homedir, 'plot/')
-    
-######## Save each frame #########################
-# save = True
-save = False
 
 ####### draw the 3D animation; always true #######
 draw_animation = True
@@ -237,14 +290,6 @@ elif TEST == False:
 # =============================================================================
 #### Flux + Period Value
 ### Sine Amplitutde
-
-### ========== production0 and BD_B,C,D,E ============
-# Fband= 1.0
-# Fambient = 0.35
-# Fpolar = 0.65
-# ### periods
-# Pband = 5.0
-# Ppol = 60.0
 
 ### ============= production1 =========================
 Fband= 0.6
@@ -293,29 +338,11 @@ option_time_array = 'simple'# simple: generate continuous evenly-spaced-time-arr
 ### Color mapping
 cmap = 'inferno'
 
-# frame_no = 100
-# t0, t1 = 0,15
-
-# frame_no = 150
-# t0, t1 = 0,60
-
-# frame_no = 150
-# t0, t1 = 0,10
-
-# frame_no = 250
-# t0, t1 = 0,120
-
-# frame_no = 150
-# t0, t1 = 0,120
-
-# frame_no = 30
-# t0, t1 = 0,30
-
 frame_no = 60
 t0, t1 = 0,60
 
-# frame_no = 60
-# t0, t1 = 0,5
+# frame_no = 30
+# t0, t1 = 0,60
 
 # frame_no = 90
 # t0, t1 = 0,30
@@ -326,22 +353,9 @@ t0, t1 = 0,60
 # =============================================================================
 #  Inclination Value of the models.
 # =============================================================================
-# inclination = [-90., -80, -70, -60, -50, -40, -30, -20, -10, 0., 10, 20, 30, 40, 50, 60, 70, 80, 90.]
 inclination = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0.]
 # inclination = [-60, -10]
 # inclination =[-30, 30]
-# inclination = [0]
-# inclination = [-60]
-# inclination = [-10]
-# inclination = [-25]
-# inclination = [+30]
-# inclination = [+45]
-# inclination = [+70]
-# inclination = [+90]
-# inclination = [-10]
-# inclination = [-30]
-# inclination = [-45]
-# inclination = [-70]
 # inclination = [-90]
 
 # =============================================================================
@@ -363,50 +377,7 @@ for counter, inclin in enumerate(inclination):
 # =============================================================================
     else:   
         print('  #### Run:[i=%i], %i/%i ####'%(inclin, counter+1, len(inclination)))
-        ### model name
-        # modelname = 'BD_B'
-        # config = [[45, 30, Fband, 'B', 10, Pband/2],
-        #           [20, 5, Fband, 'B', 60, Pband], 
-        #           [89, 65, Fband, 'P', -30, Ppol]]
-        # 
-        # modelname = 'BD_C'
-        # config = [[89, 70, Fband, 'P', -30, Ppol],
-        #           [45, 35., Fband, 'B', 10, Pband/2],
-        #           [22, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband/2],
-        #           [-30, -40, Fband, 'B', 135, Pband],
-        #           [-72, -89, Fband, 'P', 15, Ppol]]
-        #
-        # modelname = 'BD_D'
-        # config = [[88, 77, Fband, 'P', -30, Ppol],
-        #           [72, 65, Fband, 'P', -70, Ppol],
-        #           [53, 46., Fband, 'B', 100, Pband/2],
-        #           [35, 27., Fband, 'B', -10, Pband/2],
-        #           [22, 15, Fband, 'B', 150, Pband],
-        #           [8, 0, Fband, 'B', -50, Pband],
-        #           [-10, -18, Fband, 'B', 56, Pband],
-        #           [-25, -34, Fband, 'B', 16, Pband],
-        #           [-40, -48, Fband, 'B', 85, Pband/2],
-        #           [-54, -60, Fband, 'B', -35, Pband/2],
-        #           [-68, -75, Fband, 'P', 5, Ppol],
-        #           [-77, -88, Fband, 'P', 15, Ppol]]
-        
-        # modelname = 'BD_E'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [45, 38., Fband, 'B', 10, Pband/2],
-        #           [25, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband],
-        #           [-33, -40, Fband, 'B', 135, Pband/2],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
-        
-        # modelname = 'production0'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [45, 38., Fband, 'B', 10, Pband/2],
-        #           [25, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband],
-        #           [-33, -40, Fband, 'B', 135, Pband/2],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
-        
+        ### model name  
         modelname = 'production1'
         config = [[90, 65, Fpolar, 'P', 0, Ppol],
                   [45, 38., Fband, 'B', 10, Pband/2],
@@ -414,13 +385,6 @@ for counter, inclin in enumerate(inclination):
                   [-10, -20, Fband, 'B', -26, Pband],
                   [-33, -40, Fband, 'B', 135, Pband/2],
                   [-65, -90, Fpolar, 'P', 0, Ppol]]
-        
-        # modelname = 'BD_F'
-        # config = [[90, 65, Fpolar, 'P', -30, Ppol],
-        #           [28, 15, Fband, 'B', 150, Pband], 
-        #           [-10, -20, Fband, 'B', -26, Pband/2],
-        #           [-30, -40, Fband, 'B', 135, Pband],
-        #           [-65, -90, Fpolar, 'P', 15, Ppol]]
         
         ### Build metadata list
         metadata = {}
@@ -436,195 +400,190 @@ for counter, inclin in enumerate(inclination):
         # =====================================================================
         ### Edit the property of bands here!
         def atmos_mesh(x, config, t=0, spec=False):
-            im = Fambient*np.ones(x.shape)
-            sm = speckey['A']*np.ones(x.shape)
-            # lat = theta0*180/pi-90    
-            for xx in range(xsize):
-                for yy in range(ysize):
-                    ############# Adding latitude-dependent features ############# 
-                    ### All Modu: Create bands
-                    ### The lat() function converts latitude to pixel coordinate
-                    ### The order is reverse: input the latitudes from large to small using
-                    ### the format: lat(LARGE) < yy < lat(SMALL)
-                    for group in config:
-                        lat2, lat1, amp, typ, phase, period = group
-                        #### Band-type modulation
-                        if typ in ['B', 'b']:
-                            if lat(lat2) <= yy <= lat(lat1): 
-                                im[xx,yy] = amp+plWave(x=xx, value=0.1*amp, f=phase, t=t, base=0, RP=period)
-                                if spec: 
-                                    sm[xx,yy] = speckey[typ]
-                                if modu_config == 'noPolar':
-                                    if lat2 < 0:
-                                        im[xx,yy] += 0.35*polar_change(value=0, t=t, f=0, RP=Ppol)
-                                    else:
-                                        im[xx,yy] += 0.35*polar_change(value=0, t=t, f=+30, RP=Ppol)
-                        #### Polar-type modulation:            
-                        elif typ in ['P', 'p']:
-                            if lat(lat2) <= yy <= lat(lat1):
-                                if modu_config == 'noPolar':
-                                    im[xx,yy] = amp
-                                else:
-                                    im[xx,yy] = amp + polar_change(value=0.01*amp, t=t, f=phase, RP=period)
-                                if spec: 
-                                    sm[xx,yy] = speckey[typ]
+            im = np.full(x.shape, Fambient, dtype=np.float32)  # Vectorized initialization
+            sm = np.full(x.shape, speckey['A'], dtype=np.float32)  # Vectorized initialization
             
-            #### polarDynamic or polarStatic Modu Only                        
-            # =================================================================
-            # #################### Adding vortices features ################### 
-            # =================================================================
-            if modu_config in ['polarDynamic', 'polarStatic']:
-                polar_lats = []
-                for group in config:
-                    lat2, lat1, amp, typ, phase, period = group
-                    if typ in ['P', 'p']: 
-                        polar_lats.append([lat2, lat1])
-                        
-                if modu_config == 'polarDynamic': VorticeLogic = True
-                elif modu_config == 'polarStatic': VorticeLogic = False
+            # Create latitude grid (vectorized)
+            yy = np.arange(ysize)  # Shape: (ysize,)
+            
+            for group in config:
+                lat2, lat1, amp, typ, phase, period = group
+                lat_px1 = lat(lat1)  # Scalar
+                lat_px2 = lat(lat2)  # Scalar
                 
-                im = circle_vortice(im, polar_lats, t=t, rotation_period=period, variable_vortice=VorticeLogic)
-                        
-            if not spec: 
-                return im
-            else:
-                return im, sm
-        
+                # Vectorized mask (shape: (ysize,))
+                mask = (yy >= lat_px2) & (yy <= lat_px1)
+                
+                if typ in ['B', 'b']:
+                    # Vectorized planetary wave (x-axis: xsize)
+                    xx_grid = np.arange(xsize)[:, np.newaxis]  # Shape: (xsize, 1)
+                    wave = plWave(x=xx_grid, value=0.1*amp, f=phase, t=t, base=0, RP=period)
+                    im[:, mask] = amp + wave  # Assign to entire band
+                    
+                    if spec:
+                        sm[:, mask] = speckey[typ]
+                    
+                    if modu_config == 'noPolar':
+                        polar_mod = 0.35 * polar_change(value=0, t=t, f=0 if lat2 < 0 else 30, RP=Ppol)
+                        im[:, mask] += polar_mod
+                
+                elif typ in ['P', 'p']:
+                    im[:, mask] = amp if modu_config == 'noPolar' else amp + polar_change(value=0.01*amp, t=t, f=phase, RP=period)
+                    if spec:
+                        sm[:, mask] = speckey[typ]
+    
+            # Vectorize vortices (see Step 2)
+            if modu_config in ['polarDynamic', 'polarStatic']:
+                polar_lats = [[g[0], g[1]] for g in config if g[3] in ['P', 'p']]
+                im = circle_vortice_vectorized(im, polar_lats, t=t, rotation_period=period)
+            
+            return (im, sm) if spec else im
+            
         # =====================================================================
         ###################### GENERATE SPECTRAL LOOKUP MAPS ##################
         # =====================================================================
+
+        ### Set up pyvista zoom function
+        def configure_pyvista_plotter(inclin=0, zoom_factor=1.01):
+            plotter = pv.Plotter(off_screen=True, window_size=(500, 500))
+            plotter.background_color = 'black'
+            plotter.camera.SetParallelProjection(True)
+            
+             # Adjust camera elevation for inclination (polar viewing angle)
+            plotter.camera.elevation = inclin+56 # Critical fix, cancel out default elevation
+            
+            # # Equivalent to Mayavi's zoom(xx) for parallel projection
+            # plotter.camera.parallel_scale = 1.0 / zoom_factor  # Inverse relationship
+            
+            return plotter
+
         ### spectral lookup map; Run once only
         ### SPECTRA WINDOW
-        # inclin = 0
-        sfig = mlab.figure(1, bgcolor=(0, 0, 0), fgcolor=(0, 0, 0), size=(500, 500))
-        _, s = atmos_mesh(x, config, spec=True)
-        mlab.view(azimuth=180.0, elevation=90.0-inclin, distance=2.0, roll=90)
-        sphere_spec = mlab.mesh(x, y, z, scalars=s, colormap='plasma', vmin=0, vmax=1, figure=sfig)
-        sphere_spec.actor.property.lighting = False
-        sfig.scene.parallel_projection = True
-        mlab.view(azimuth=180.0, elevation=90.0-inclin, distance=2.0, roll=90)
-        sfig.scene.reset_zoom()
-        scamera = sfig.scene.camera
-        scamera.zoom(1.57)
-        
-        specmap = mlab.screenshot(figure=sfig, mode='rgba', antialiased=True)
-        mlab.clf()
-        mlab.close('all')
-        
-        specgray = specmap[:,:,0] * 0.2989 + specmap[:,:,1] * 0.587 + specmap[:,:,2] * 0.114
-        ### Condition
-        con_amb = [0.2, 0.3]
-        is_amb = ((specgray >= con_amb[0]) & (specgray < con_amb[1])).astype(int)
-        con_band = [0.5, 0.6]
-        is_band = ((specgray >= con_band[0]) & (specgray < con_band[1])).astype(int) 
-        con_pol = [0.6, 0.75]
-        is_pol = ((specgray >= con_pol[0]) & (specgray < con_pol[1])).astype(int)
-        total_count = is_amb.sum() + is_band.sum() + is_pol.sum()
-        
-        metadata['specmap'] = specgray
-        metadata['speckey'] = speckey
-        metadata['cond_is_amb'] = con_amb
-        metadata['cond_is_band'] = con_band
-        metadata['cond_is_pol'] = con_pol
+        def generate_spectral_map_pv(x, y, z, config, inclin, metadata):
+            plotter = configure_pyvista_plotter(inclin=inclin, zoom_factor=1.57)
+            
+            # Create structured grid and add to plotter
+            grid = pv.StructuredGrid(x, y, z)
+            _, s = atmos_mesh(x, config, spec=True)
+            grid.point_data['scalars'] = s.ravel(order='F')
+            
+            # Set camera position and render
+            plotter.add_mesh(grid, scalars='scalars', cmap='plasma', clim=[0, 1], show_scalar_bar=False)
+            plotter.camera_set = True  # Lock camera after initial setup
+            plotter.render()
+            
+            # Capture and process image
+            specmap = plotter.screenshot()
+            specgray = specmap[:,:,0] * 0.2989 + specmap[:,:,1] * 0.587 + specmap[:,:,2] * 0.114
+            
+            # Region classification
+            con_amb = [0.2, 0.3]
+            is_amb = ((specgray >= con_amb[0]) & (specgray < con_amb[1])).astype(int)
+            con_band = [0.5, 0.6]
+            is_band = ((specgray >= con_band[0]) & (specgray < con_band[1])).astype(int)
+            con_pol = [0.6, 0.75]
+            is_pol = ((specgray >= con_pol[0]) & (specgray < con_pol[1])).astype(int)
+            total_count = is_amb.sum() + is_band.sum() + is_pol.sum()
+            
+            # Update metadata
+            metadata.update({
+                'specmap': specgray,
+                'speckey': speckey,
+                'cond_is_amb': con_amb,
+                'cond_is_band': con_band,
+                'cond_is_pol': con_pol,
+                'total_count': total_count,
+                'is_amb': is_amb,
+                'is_band': is_band, 
+                'is_pol': is_pol
+            })
+            
+            plotter.close()
+            return metadata
+
         # =====================================================================
         ########################## CREATE PHOTOMETRY ##########################
         # =====================================================================
-        ### Create list of images
-        imarray = []
-        fluxarray = []
-        gray_array = []
+        def generate_photometry_pv(x, y, z, config, inclin, time_array):
+            plotter = configure_pyvista_plotter(inclin=inclin)
+            grid = pv.StructuredGrid(x, y, z)
             
-        ### create time_array in hours unit
-        if option_time_array == 'simple':
-            # simple evenly-spaced time array
-            time_array = np.linspace(t0,t1,frame_no)
+            imarray = []
+            fluxarray = []
+            gray_array = []
+            limb_dark_mask = None
             
-        if option_time_array == 'multivisit':
-            # create multivisit
-            time_array = [0]
-        
-        # =====================================================================
-        # PLOTTING ROUTINES AND ANIMATION CREATOR
-        # =====================================================================
-        plt.close('all')
-        fig2, ax2 = plt.subplots()
-        ax2.set_axis_off() # You don't actually need this line as the saved figure will not include the labels, ticks, etc, but I like to include it
-        fig2.subplots_adjust(left=0, bottom=0, right=1, top=1)
-        #### create 3d figure
-        mfig = mlab.figure(1, bgcolor=(0, 0, 0), fgcolor=(0, 0, 0), size=(500, 500))
-        # mfig = mlab.figure(1, bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), size=(500, 500))
-            
-        ### Start looping through the timesteps array
-        for i in range(frame_no):
-            ti = time_array[i]
-            ######### Create 3d mesh in Mayavi THEN paste into matplotlib figures ##########
-        
-            ### configuring the 3d view and camera
-            mlab.view(azimuth=180.0, elevation=90.0-inclin, distance=2.0, roll=90)
-        
-            ### Do the meshplot 
-            s = atmos_mesh(x,config,t=ti)
-            sphere = mlab.mesh(x, y, z, scalars=s, colormap=cmap, vmin=0, vmax=1)
-        
-            ### Set up cosmetics
-            sphere.actor.property.lighting = False
-            mfig.scene.parallel_projection = True
-            mfig.scene.reset_zoom()
-            camera = mfig.scene.camera
-            camera.zoom(1.57)
-        
-            ### Take screenshot as array object
-            imgmap = mlab.screenshot(figure=mfig, mode='rgba', antialiased=True)
-            mlab.clf()
-            
-            ### convert map into grayscale
-            imgray = imgmap[:,:,0] * 0.2989 + imgmap[:,:,1] * 0.587 + imgmap[:,:,2] * 0.114
-            ### Run once: get limb-darkening mask-array:
-            if i == 0:
-                limb_dark_mask = limb_darkening(imgray, u_coefficient=0.4)
-            ### Apply limb-darkening on image
-            imgray *= limb_dark_mask
-            
-            gray_array.append([imgray])
-            if ((i+1)/frame_no*100)%10 == 0.0: 
-                print('%i%% done'%((i+1)/frame_no*100))
-            
-            # =================================================================
-            ######### Pasting into matplotlib figures #########################
-            ### Show mayavi im as Matplotlib object and draw animation
-            # =================================================================
-            if draw_animation: 
-                ax2.set_axis_off()
-                imobj = ax2.imshow(imgray, vmin=0, vmax=1, animated=True, cmap=cmap)
-                if i == 0:
-                    ax2.imshow(imgray, vmin=0, vmax=1, cmap=cmap) # show an initial one first
-                    # plt.show()
-            else:
-                imobj = ax2.imshow(imgray, vmin=0, vmax=1, cmap=cmap)
-            imarray.append([imobj])
-        
-            if save:
-                plt.margins(0, 0), plt.draw(), plt.axis('off')
-                fig2.savefig(plotPath+'ani_%04d.jpeg'%i, format='jpeg', bbox_inches = 'tight', pad_inches=0)
-        
-            # =================================================================
-            #### animation
-            # =================================================================
-        if draw_animation:
-            ani = animation.ArtistAnimation(fig2, imarray)
-            if save_animation:
-                ### To save the animation using Pillow as a gif
-                ### To save the animation as mp4 use FFMpegWriter
-                if frame_no < 60:
-                    writer = animation.ImageMagickWriter(metadata=dict(artist='Me'), bitrate=4000)
-                else:
-                    writer = animation.ImageMagickWriter(fps=10, metadata=dict(artist='Me'), bitrate=4000)
-                ani.save(plotPath+'TEST[%s][%s]_[i=%i]_[ani_%i-%i_no=%i].gif'%(modu_config, modelname, inclin, t0, t1, frame_no), 
-                         writer=writer, dpi=150)
+            progress = tqdm(enumerate(time_array), total=len(time_array), desc=f'Rendering i={inclin}')
+
+            for frame_idx, ti in progress:
+                # Generate atmospheric map and update mesh
+                s = atmos_mesh(x, config, t=ti)
+                grid.point_data['scalars'] = s.ravel(order='F')
                 
-            # plt.show()
-            plt.close()
+                # Render and capture frame
+                imgray = render_frame_pv(plotter, grid, s)
+                
+                # Compute limb darkening mask from FIRST RENDERED FRAME
+                if frame_idx == 0:
+                    # Use ACTUAL RENDERED IMAGE (square screenshot)
+                    limb_dark_mask = limb_darkening(imgray, u_coefficient=0.4)
+                    
+                    # Optional: Save mask for inspection
+                    # plt.imsave(f'limb_mask_i{inclin}.png', limb_dark_mask, cmap='gray')
+                
+                # Apply mask to all frames including the first
+                if limb_dark_mask is not None:
+                    imgray = imgray * limb_dark_mask  # Element-wise multiplication
+                    
+                # Store processed frame
+                gray_array.append(imgray)
+                fluxarray.append(s.copy())  # Preserve original atmospheric data
+                
+                # Matplotlib animation handling
+                if draw_animation:
+                    imobj = plt.imshow(imgray, animated=True, cmap='inferno', vmin=0, vmax=1)
+                    imarray.append([imobj])
+
+                # Progress reporting
+                if (frame_idx + 1) % 10 == 0:
+                    print(f'Frame {frame_idx+1}/{len(time_array)} processed')
+
+            plotter.close()
+            return {
+                'imarray': imarray,
+                'fluxarray': fluxarray,
+                'gray_array': gray_array,
+                'limb_mask': limb_dark_mask  # Optional return
+            }
+
+        # =====================================================================
+        ################# RENDERS, CAPTURE FRAMES AND CONVERT GRAYSCALE #######
+        # =====================================================================
+
+        def render_frame_pv(plotter, grid, scalars):
+            plotter.clear()
+            plotter.add_mesh(grid, scalars=scalars.ravel(order='F'), 
+                            cmap='inferno', clim=[0, 1], show_scalar_bar=False)
+            plotter.render()
+            imgmap = plotter.screenshot()
+            return imgmap[:,:,0] * 0.2989 + imgmap[:,:,1] * 0.587 + imgmap[:,:,2] * 0.114
         
+        # =====================================================================
+        # ############### Generate Photometry and Configure PyVista Plotter ###    
+        # =====================================================================
+        # Generate spectral map with metadata
+        
+        metadata = generate_spectral_map_pv(x, y, z, config, inclin, metadata)
+        
+        # Generate photometry data
+        time_array = np.linspace(t0, t1, frame_no)
+        photometry_data = generate_photometry_pv(x, y, z, config, inclin, time_array)
+        
+        # Merge results
+        metadata.update(photometry_data)
+        
+        gray_array = photometry_data['gray_array']
+
     # =========================================================================
     #     ##### OUTPUT HANDLING AND METADATA WRITER
     # =========================================================================
@@ -634,34 +593,45 @@ for counter, inclin in enumerate(inclination):
     #########################################
     ## WRITE PICKLE OUTPUT FOR GRAY_ARRAY AND METADATA
     if save_output_array:
-        folderModel = '/dataCube[%s][%s][i][%i][%i][%i]'%(modelname, modu_config, t0, t1, frame_no)
-        folderModel_path = homedir + '/output'+ folderModel
+        folderModel = 'dataCube[%s][%s][%i][%i][%i]'%(modelname, modu_config, t0, t1, frame_no)
+        folderModel_path = join(homedir, 'output', folderModel)
         ### Create new output folder if not existed
         create_folder(folderModel_path)
-        grayArrayPath = folderModel_path+'/dataCube[%s][%s][%i][%i][%i][%i].h5'%(modu_config, modelname, inclin, t0, t1, frame_no)
-        metaPath = folderModel_path+'/[meta]dataCube[%s][%s][%i][%i][%i][%i].pkl'%(modu_config, modelname, inclin, t0, t1, frame_no)
+        grayArrayPath = join(folderModel_path, 'dataCube[%s][%s][%i][%i][%i][%i].h5'%(modu_config, modelname, inclin, t0, t1, frame_no))
+        metaPath = join(folderModel_path, 'meta_dataCube[%s][%s][%i][%i][%i][%i].h5'%(modu_config, modelname, inclin, t0, t1, frame_no))
         ### Write file
         with h5py.File(grayArrayPath, 'w') as file:
             file.create_dataset('dataset', data=gray_array)
-        with open(metaPath, 'wb+') as file:
-            pickle.dump(metadata, file)
+        with h5py.File(metaPath, 'w') as file2:
+            file2.create_dataset('dataset', data=metadata)
+    # =========================================================================
     
     ### Plot first photometry frame
     plt.close(), plt.figure(dpi=300), 
-    plt.imshow(gray_array[0][0], vmin=0.0, vmax=1, cmap='inferno')
+    plt.imshow(gray_array[0], cmap='inferno')
     plt.title('Photometry at t0 [%s][%s][i=%i]:'%(modu_config, modelname, inclin))
     if save_still:     
         plt.savefig(plotPath+'[%s][%s]_[phot_at_t0_i=%i]_[still].png'%(modu_config, modelname, inclin), format='png', dpi=300)
     plt.show()
+    plt.close()
                     
     ### Plot specmap
+    
+    specmap = metadata['specmap']
+    speckey = metadata['speckey']
+    total_count = metadata['total_count']
+    is_amb = metadata['is_amb']
+    is_pol = metadata['is_pol']
+    is_band = metadata['is_band']
+    
     plt.close(), plt.figure(dpi=300)
-    plt.imshow(specmap, vmin=0, vmax=1)
+    plt.imshow(specmap)
     fracA, fracP, fracB = is_amb.sum()/total_count, is_pol.sum()/total_count, is_band.sum()/total_count
     plt.title('Spectra Area Coverage, i=%i: [A]=%.2f, [P]=%.2f, [B]=%.2f'%(inclin, fracA, fracP, fracB))
     if save_specmap:
         plt.savefig(plotPath+'[%s]%s_[spectraCoverageMap]_i=%i.png'%(modu_config, modelname, inclin), format='png', dpi=300)
     plt.show()
+    plt.close()
 print('Elapsed Time: ')
 print(datetime.now() - startTime)
 
