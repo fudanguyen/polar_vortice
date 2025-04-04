@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 18 12:46:15 2023
+Created on March 1 2025
+
+Upgrade from AtmosphereGenerator.py:
+- significant improvement in speed via vectorization of routines
+- gpu acceleration with pyvista but mainly cpu computation
+- added multi-pressure capability
 
 @author: nguyendat
 """
@@ -32,6 +37,7 @@ from tqdm import tqdm
 import numpy as np
 import numba
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import matplotlib.animation as animation
 # from PIL import Image, ImageDraw
 import warnings
@@ -43,6 +49,7 @@ from datetime import datetime
 # new imports
 import imageio
 import cupy as cp
+from PIL import Image
 
 ### Path management
 import os
@@ -256,6 +263,11 @@ warnings.filterwarnings("ignore")
 #### SAVE options
 TEST = True
 # TEST = False
+
+#### INLINE PLOTTING: TURN OFF FOR FASTER COMPUTATION
+# inlinePlot = True
+inlinePlot = False
+
 if TEST: 
     plotPath = join(homedir, 'plot/', 'test/')
 else:
@@ -586,7 +598,7 @@ for counter, inclin in enumerate(inclination):
 
     # =========================================================================
     #     ##### OUTPUT HANDLING AND METADATA WRITER
-    # =========================================================================
+    # ================================geo=========================================
     # 1. write output image cube file
     # 2. write output FLUX file
     # 3. write model metadata: numbers of period bands, periods, location, types, fambient, fband, fpole, 
@@ -606,17 +618,7 @@ for counter, inclin in enumerate(inclination):
             file2.create_dataset('dataset', data=metadata)
     # =========================================================================
     
-    ### Plot first photometry frame
-    plt.close(), plt.figure(dpi=300), 
-    plt.imshow(gray_array[0], cmap='inferno')
-    plt.title('Photometry at t0 [%s][%s][i=%i]:'%(modu_config, modelname, inclin))
-    if save_still:     
-        plt.savefig(plotPath+'[%s][%s]_[phot_at_t0_i=%i]_[still].png'%(modu_config, modelname, inclin), format='png', dpi=300)
-    plt.show()
-    plt.close()
-                    
     ### Plot specmap
-    
     specmap = metadata['specmap']
     speckey = metadata['speckey']
     total_count = metadata['total_count']
@@ -624,15 +626,48 @@ for counter, inclin in enumerate(inclination):
     is_pol = metadata['is_pol']
     is_band = metadata['is_band']
     
-    plt.close(), plt.figure(dpi=300)
-    plt.imshow(specmap)
-    fracA, fracP, fracB = is_amb.sum()/total_count, is_pol.sum()/total_count, is_band.sum()/total_count
-    plt.title('Spectra Area Coverage, i=%i: [A]=%.2f, [P]=%.2f, [B]=%.2f'%(inclin, fracA, fracP, fracB))
-    if save_specmap:
-        plt.savefig(plotPath+'[%s]%s_[spectraCoverageMap]_i=%i.png'%(modu_config, modelname, inclin), format='png', dpi=300)
-    plt.show()
-    plt.close()
+    #### Definition: apply colormap and save 2 frames: photometry and specmap
+    def save_image_with_cmap(data, filename, cmap='inferno', dpi=300):
+        """Matplotlib-equivalent save function using imageio"""
+        # 1. Normalize data
+        vmin, vmax = np.nanmin(data), np.nanmax(data)
+        normalized = (np.clip(data, vmin, vmax) - vmin) / (vmax - vmin)
+        
+        # 2. Apply colormap
+        cmap = plt.cm.get_cmap(cmap)
+        rgba = cmap(normalized)
+        
+        # 3. Convert to PIL Image for DPI control
+        img = Image.fromarray((rgba[..., :3] * 255).astype(np.uint8))
+        
+        # 4. Save with metadata (equivalent to matplotlib's dpi)
+        img.save(filename, dpi=(dpi, dpi), format='PNG')
+
+    ## Photometry map
+    save_image_with_cmap(
+        gray_array[0], f'{plotPath}[{modu_config}][{modelname}]_[phot_at_t0_i={inclin}]_[still].png',
+        cmap='inferno', dpi=300)
+    
+    ## Specmap
+    save_image_with_cmap(
+        specmap, f'{plotPath}[{modu_config}][{modelname}]_[spectraCoverageMap]_i={inclin}.png',
+        cmap='viridis', dpi=300)
+    
+    ### Plot and save the first photometry frame
+    if inlinePlot: 
+        plt.figure(dpi=300), plt.tight_layout()
+        plt.imshow(gray_array[0], cmap='inferno')
+        plt.title('Photometry at t0 [%s][%s][i=%i]:'%(modu_config, modelname, inclin))  
+        plt.show()
+        
+        plt.figure(dpi=300), plt.tight_layout()
+        plt.imshow(specmap)
+        fracA, fracP, fracB = is_amb.sum()/total_count, is_pol.sum()/total_count, is_band.sum()/total_count
+        plt.title('Spectra Area Coverage, i=%i: [A]=%.2f, [P]=%.2f, [B]=%.2f'%(inclin, fracA, fracP, fracB))
+        plt.show(), plt.close()
+        
 print('Elapsed Time: ')
 print(datetime.now() - startTime)
+plt.close('all')
 
-# %%
+ # %%
